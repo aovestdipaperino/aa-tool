@@ -101,7 +101,7 @@ fn generate_wav(log_file_name: &String, wav_file_name: &String) {
     let mut y = iter.next().unwrap().1;
     let mut curr = iter.next().unwrap();
     let mut t = 0.0;
-    let p = 1.0 / 44100.0;
+    let p = 1.0 / 192000.0;
     result.push(y);
     while t <= max_x {
         t += p;
@@ -120,7 +120,7 @@ fn generate_wav(log_file_name: &String, wav_file_name: &String) {
     }
     let spec = hound::WavSpec {
         channels: 1,
-        sample_rate: 44100,
+        sample_rate: 192000,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
