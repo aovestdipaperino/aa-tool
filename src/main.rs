@@ -2,12 +2,14 @@
 use clap::Parser;
 use hound;
 use plotters::backend::BitMapBackend;
+use plotters::chart::{SeriesLabelPosition};
 use plotters::drawing::IntoDrawingArea;
+use plotters::element::PathElement;
 use plotters::prelude::ChartBuilder;
 use plotters::prelude::{LineSeries, WHITE};
-use plotters::style::text_anchor::{HPos, Pos, VPos};
-use plotters::style::{register_font, Color, RGBColor, TextStyle};
+use plotters::style::{register_font, Color, RGBColor, TextStyle, BLACK};
 use rodio::{OutputStream, Sink};
+use std::collections::VecDeque;
 use std::io::Write;
 use std::{
     fs::File,
@@ -55,12 +57,10 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
         RGBColor(200, 150, 0),
         RGBColor(50, 50, 50),
     ];
-    // TODO: remove title and add color legend at the bottom.
     let _ = register_font("sans-serif", plotters::style::FontStyle::Normal, 
     include_bytes!("bernhard.ttf"));
-    let log_file_name = log_file_names.get(0).unwrap();
-
-    let mut all_data: Vec<Vec<(f64, f64)>> = log_file_names.iter().map(|name| read_values(name)).collect();
+    
+    let mut all_data: VecDeque<Vec<(f64, f64)>> = log_file_names.iter().map(|name| read_values(name)).collect();
 
     let min_x = start.unwrap_or(
         all_data.iter().map(|data| data.iter().next().unwrap().0).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()
@@ -78,12 +78,6 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
 
     root_area.fill(&WHITE).unwrap();
 
-    let style: TextStyle= ("sans-serif", 60).into();
-    let style = &style.pos(Pos::new(HPos::Right, VPos::Top));
-    let size = root_area.estimate_text_size(&log_file_name, style).unwrap();
-    root_area.draw_text(log_file_name, style, ((w as i32 - size.0 as i32 -5),5)).unwrap();
-    let root_area = root_area.shrink((0,size.1 + 10), (w, h - (size.1 + 10)));
-
     let mut cc = ChartBuilder::on(&root_area)
         .margin(5)
         .set_all_label_area_size(20)
@@ -100,10 +94,22 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
         .unwrap();
 
     let mut counter = 0;
-    while let Some(data) = all_data.pop() {
-        cc.draw_series(LineSeries::new(data, colors[counter].stroke_width(2))).unwrap();
+    while let Some(data) = all_data.pop_front() {
+        let color = colors[counter].clone();
+        cc.draw_series(LineSeries::new(data, colors[counter].stroke_width(2)))
+            .unwrap()
+            .label(log_file_names.get(counter).unwrap())
+            .legend(move|(x,y)| PathElement::new(vec![(x,y), (x + 20,y)], &color));
         counter += 1;
     }
+
+    let style: TextStyle= ("sans-serif", 20 * zoom as i32).into();
+    cc.configure_series_labels()
+    .position(SeriesLabelPosition::LowerLeft)
+    .label_font(style)
+    .background_style(&WHITE)
+    .border_style(&BLACK)
+    .draw().unwrap();
 
     // To avoid the IO failure being ignored silently, we manually call the present function
     root_area.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
