@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+plotters = { version = "^0.3.5", default_features = false,  features = ["all_series", "all_elements", "bitmap_backend", "bitmap_encoder", "ab_glyph"] }
 hound = "3.4.0"
-plotters = "^0.3.5"
 clap = { version = "4.5.1", features = ["derive"] }
+rodio = { version = "0.17.3" }

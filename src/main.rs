@@ -4,7 +4,11 @@ use hound;
 use plotters::backend::BitMapBackend;
 use plotters::drawing::IntoDrawingArea;
 use plotters::prelude::ChartBuilder;
-use plotters::prelude::{LineSeries, RED, WHITE};
+use plotters::prelude::{LineSeries, WHITE};
+use plotters::style::text_anchor::{HPos, Pos, VPos};
+use plotters::style::{register_font, Color, RGBColor, TextStyle};
+use rodio::{OutputStream, Sink};
+use std::io::Write;
 use std::{
     fs::File,
     io::{self, BufRead},
@@ -41,29 +45,43 @@ fn read_values(log_file_name: &String) -> Vec<(f64, f64)> {
     result
 }
 
-fn generate_png(log_file_name: &String, png_file_name: &String) {
-    // Your data points
-    let data = read_values(log_file_name);
-    let min_x = data.iter().next().unwrap().0;
-    let max_x = data.iter().last().unwrap().0;
-    let min_y = *data
-        .iter()
-        .map(|(_, y)| y)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
-    let max_y = *data
-        .iter()
-        .map(|(_, y)| y)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap();
+fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64, start: Option<f64>) {
+    let colors = vec![
+        RGBColor(200, 0, 0),
+        RGBColor(0, 150, 0),
+        RGBColor(0, 0, 150),
+        RGBColor(0, 150, 150),
+        RGBColor(200, 0, 150),
+        RGBColor(200, 150, 0),
+        RGBColor(50, 50, 50),
+    ];
+    let _ = register_font("sans-serif", plotters::style::FontStyle::Normal, 
+    include_bytes!("bernhard.ttf"));
+    let log_file_name = log_file_names.get(0).unwrap();
 
-    let w = (max_x - min_x) * 3000.0 / (max_y - min_y);
+    let mut all_data: Vec<Vec<(f64, f64)>> = log_file_names.iter().map(|name| read_values(name)).collect();
 
-    let root_area = BitMapBackend::new(png_file_name, (w as u32, 1280)).into_drawing_area();
+    let min_x = start.unwrap_or(
+        all_data.iter().map(|data| data.iter().next().unwrap().0).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()
+    );
+    let max_x = all_data.iter().map(|data| data.iter().last().unwrap().0).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let min_y = all_data.iter().map(|data| *data.iter().map(|(_, y)| y).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+    let max_y = all_data.iter().map(|data| *data.iter().map(|(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();   
+
+    let w = (max_x - min_x) * 3000.0 *zoom / (max_y - min_y);
+    let w = w as u32;
+    let h = (1280.0 * zoom) as u32;
+
+  
+    let root_area = BitMapBackend::new(png_file_name, (w, h)).into_drawing_area();
 
     root_area.fill(&WHITE).unwrap();
 
-    let root_area = root_area.titled(log_file_name, ("sans-serif", 60)).unwrap();
+    let style: TextStyle= ("sans-serif", 60).into();
+    let style = &style.pos(Pos::new(HPos::Right, VPos::Top));
+    let size = root_area.estimate_text_size(&log_file_name, style).unwrap();
+    root_area.draw_text(log_file_name, style, ((w as i32 - size.0 as i32 -5),5)).unwrap();
+    let root_area = root_area.shrink((0,size.1 + 10), (w, h - (size.1 + 10)));
 
     let mut cc = ChartBuilder::on(&root_area)
         .margin(5)
@@ -72,22 +90,25 @@ fn generate_png(log_file_name: &String, png_file_name: &String) {
         .unwrap();
 
     cc.configure_mesh()
-        .x_labels(max_x as usize + 1)
+        .x_labels((w / 50) as usize)
         .y_labels(10)
         .disable_mesh()
         .x_label_formatter(&|v| format!("{:.1}", v))
         .y_label_formatter(&|v| format!("{:.1}", v))
         .draw()
         .unwrap();
-    //
-    // And we can draw something in the drawing area
-    cc.draw_series(LineSeries::new(data, &RED)).unwrap();
+
+    let mut counter = 0;
+    while let Some(data) = all_data.pop() {
+        cc.draw_series(LineSeries::new(data, colors[counter].stroke_width(2))).unwrap();
+        counter += 1;
+    }
 
     // To avoid the IO failure being ignored silently, we manually call the present function
     root_area.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
 }
 
-fn generate_wav(log_file_name: &String, wav_file_name: &String) {
+fn generate_samples(log_file_name: &String, sampling_freq: i32, start: Option<f64>) -> Vec<i16>  {
     let data = read_values(log_file_name);
     let mut result: Vec<f64> = Vec::new();
     let max_x = data.iter().last().unwrap().0;
@@ -97,16 +118,22 @@ fn generate_wav(log_file_name: &String, wav_file_name: &String) {
         .max_by(|a, b| a.abs().partial_cmp(&b.abs()).unwrap())
         .unwrap();
 
+    let start = start.unwrap_or(0.0);
+    println!("Start time: {}", start);
     let mut iter = data.iter();
     let mut y = iter.next().unwrap().1;
     let mut curr = iter.next().unwrap();
     let mut t = 0.0;
-    let p = 1.0 / 192000.0;
-    result.push(y);
+    let p = 1.0 / sampling_freq as f64;
+    if t >= start { 
+        result.push(y);
+    }
     while t <= max_x {
         t += p;
         if t <= curr.0 {
-            result.push(y);
+            if t >= start { 
+                result.push(y);
+            }
             continue;
         }
         while t > curr.0 {
@@ -118,6 +145,18 @@ fn generate_wav(log_file_name: &String, wav_file_name: &String) {
             y = curr.1;
         }
     }
+    let ratio = 32768.0 / max_y;
+    let mut samples: Vec<i16> = Vec::new();
+    result
+        .iter()
+        .map(|y| (ratio * y) as i16)
+        .for_each(|value| samples.push(value));
+    println!("End time: {}", t);
+    samples
+}
+
+fn generate_wav(log_file_name: &String, wav_file_name: &String, start: Option<f64>) {
+    let samples = generate_samples(log_file_name, 192000, start);
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: 192000,
@@ -126,11 +165,9 @@ fn generate_wav(log_file_name: &String, wav_file_name: &String) {
     };
 
     let mut writer = hound::WavWriter::create(wav_file_name, spec).unwrap();
-    let ratio = 32768.0 / max_y;
-    result
-        .iter()
-        .map(|y| (ratio * y) as i16)
-        .for_each(|value| writer.write_sample(value).unwrap());
+    for sample in samples {
+        writer.write_sample(sample).unwrap();
+    }
 
     writer.finalize().unwrap();
 }
@@ -148,14 +185,34 @@ enum Command {
     Plot(Plot),
     #[clap(about = "Generates a wav file")]
     Wav(Wav),
+    #[clap(about = "Generates a C++ array")]
+    CppArray(CppArray),
+    #[clap(about = "Plays the sound")]
+    Play(Play),
+}
+
+#[derive(Parser)]
+struct Play {
+    #[clap(help = "The input file to use")]
+    filenames: Vec<String>,
+    #[clap(long, help = "Start time")]
+    #[arg(short, long)]
+    start: Option<f64>,
 }
 
 #[derive(Parser)]
 struct Plot {
     #[clap(help = "The input file to use")]
-    filename: String,
+    filenames: Vec<String>,
+    #[clap(help = "The zoom factor", name = "zoom")]
+    #[arg(long)]
+    zoom: Option<f64>,
     #[clap(long, help = "The output file to use")]
+    #[arg(short, long)]
     output: Option<String>,
+    #[clap(long, help = "Start time")]
+    #[arg(short, long)]
+    start: Option<f64>,
 }
 
 #[derive(Parser)]
@@ -163,7 +220,23 @@ struct Wav {
     #[clap(help = "The input file to use")]
     filename: String,
     #[clap(long, help = "The output file to use")]
+    #[arg(short, long)]
     output: Option<String>,
+    #[clap(long, help = "Start time")]
+    #[arg(short, long)]
+    start: Option<f64>,
+}
+
+#[derive(Parser)]
+struct CppArray {
+    #[clap(help = "The input file to use")]
+    filename: String,
+    #[clap(long, help = "The output file to use")]
+    #[arg(short, long)]
+    output: Option<String>,
+    #[clap(long, help = "Start time")]
+    #[arg(short, long)]
+    start: Option<f64>,
 }
 
 fn main() {
@@ -171,13 +244,14 @@ fn main() {
 
     match opts.command {
         Command::Plot(plot) => {
-            println!("Plotting from file: {}", plot.filename);
-            if let Some(ref o) = plot.output {
-                println!("Outputting to file: {}", o);
-            }
+            //println!("Plotting from file: {}", plot.filename);
+            let filename = &plot.output.unwrap_or("output.png".to_string());
+            println!("Outputting to file: {}", filename);
             generate_png(
-                &plot.filename,
-                &plot.output.unwrap_or("output.png".to_string()),
+                &plot.filenames,
+                filename,
+                plot.zoom.unwrap_or(1.0),
+                plot.start,
             );
         }
         Command::Wav(wav) => {
@@ -188,7 +262,38 @@ fn main() {
             generate_wav(
                 &wav.filename,
                 &wav.output.unwrap_or("output.wav".to_string()),
+                wav.start,
             );
+        }
+        Command::CppArray(array) => {
+            println!("Generating C++ array from file: {}", array.filename);
+            if let Some(ref o) = array.output {
+                println!("Outputting to file: {}", o);
+            }
+            let samples = generate_samples(&array.filename, 48000, array.start);
+            let mut file = File::create(array.output.unwrap_or("output.cpp".to_string())).unwrap();
+            file.write_all(b"const int16_t samples[] = {").unwrap();
+            if let Some((last, elements)) = samples.split_last() {
+                for (i, sample) in elements.iter().enumerate() {
+                    file.write_all(format!("{}, ", sample).as_bytes()).unwrap();
+                    if (i + 1) % 16 == 0 {
+                        file.write_all(b"\n").unwrap();
+                    }
+                }
+                file.write_all(format!("{}", last).as_bytes()).unwrap();
+            }
+                
+            file.write_all(b"};").unwrap();
+        },
+        Command::Play(play) => {
+            println!("Playing from file: {:?}", play.filenames);
+            let samples = generate_samples(&play.filenames[0], 192000, play.start);
+            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+            let sink = Sink::try_new(&stream_handle).unwrap();
+            let source = rodio::buffer::SamplesBuffer::new(1, 192000, samples);
+
+            sink.append(source);
+            sink.sleep_until_end();
         }
     }
 }
