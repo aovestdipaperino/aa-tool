@@ -1,19 +1,19 @@
 # el-tool
 
-el-tool is a command line tool written in Rust to help with handling netlist nltool output logs.
+el-tool is a command line tool written in Rust to help converting/playing netlist nltool output logs.
 It allows to:
 - plot multiple log files into a PNG chart
+- convert the log into a C++ array representing raw audio samples
 - generate a wave file out of an input log
 - play the log file without having to generate the wav
 
-Testing it:
+**Testing it:**
 
 ```
 cargo build --release
 ./target/release/el-tool play --start=7 test/music.log
 ```
-
-Usage:
+**Usage:**
 
 ```
 el-tool <COMMAND>
