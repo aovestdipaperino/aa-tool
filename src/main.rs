@@ -55,6 +55,7 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
         RGBColor(200, 150, 0),
         RGBColor(50, 50, 50),
     ];
+    // TODO: remove title and add color legend at the bottom.
     let _ = register_font("sans-serif", plotters::style::FontStyle::Normal, 
     include_bytes!("bernhard.ttf"));
     let log_file_name = log_file_names.get(0).unwrap();
