@@ -6,6 +6,13 @@ It allows to:
 - generate a wave file out of an input log
 - play the log file without having to generate the wav
 
+Testing it:
+
+```
+cargo build --release
+./target/release/el-tool play --start=7 test/music.log
+```
+
 Usage:
 
 ```
