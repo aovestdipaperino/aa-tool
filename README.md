@@ -28,7 +28,6 @@ Commands:
 Generating a plot:
 
 ```
-
 Usage: el-tool plot [OPTIONS] [FILENAMES]...
 
 Arguments:
@@ -43,8 +42,6 @@ Options:
 Generating a wav file:
 
 ```
-Generates a wav file
-
 Usage: el-tool wav [OPTIONS] <FILENAME>
 
 Arguments:
