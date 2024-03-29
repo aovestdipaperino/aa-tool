@@ -58,7 +58,7 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
         RGBColor(50, 50, 50),
     ];
     let _ = register_font("sans-serif", plotters::style::FontStyle::Normal, 
-    include_bytes!("bernhard.ttf"));
+    include_bytes!("Montserrat-Regular.ttf"));
     
     let mut all_data: VecDeque<Vec<(f64, f64)>> = log_file_names.iter().map(|name| read_values(name)).collect();
 
