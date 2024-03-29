@@ -2,7 +2,7 @@
 use clap::Parser;
 use hound;
 use plotters::backend::BitMapBackend;
-use plotters::chart::{SeriesLabelPosition};
+use plotters::chart::SeriesLabelPosition;
 use plotters::drawing::IntoDrawingArea;
 use plotters::element::PathElement;
 use plotters::prelude::ChartBuilder;
