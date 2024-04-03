@@ -27,7 +27,7 @@ where
     Ok(io::BufReader::new(file).lines())
 }
 
-fn read_values(log_file_name: &String) -> Vec<(f64, f64)> {
+fn read_values(log_file_name: &String) -> Option<Vec<(f64, f64)>> {
     let mut prev: Option<f64> = None;
     let mut result: Vec<(f64, f64)> = Vec::new();
     // open a file
@@ -35,8 +35,8 @@ fn read_values(log_file_name: &String) -> Vec<(f64, f64)> {
         // Consumes the iterator, returns an (Optional) String
         for line in lines.flatten() {
             let mut values = line.split_whitespace();
-            let x: f64 = values.next().unwrap().parse().unwrap();
-            let y: f64 = values.next().unwrap().parse().unwrap();
+            let x: f64 = values.next()?.parse().ok()?;
+            let y: f64 = values.next()?.parse().ok()?;
             if prev.is_some() {
                 result.push((x, prev.unwrap()));
             }
@@ -44,7 +44,10 @@ fn read_values(log_file_name: &String) -> Vec<(f64, f64)> {
             result.push((x, y))
         }
     }
-    result
+    if result.len() == 0 {
+        return None;
+    }
+    Some(result)
 }
 
 fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64, start: Option<f64>) {
@@ -60,7 +63,12 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
     let _ = register_font("sans-serif", plotters::style::FontStyle::Normal, 
     include_bytes!("Montserrat-Regular.ttf"));
     
-    let mut all_data: VecDeque<Vec<(f64, f64)>> = log_file_names.iter().map(|name| read_values(name)).collect();
+    let mut all_data: VecDeque<Vec<(f64, f64)>> = log_file_names.iter().filter_map(|name| read_values(name)).collect();
+
+    if all_data.len() == 0 {
+        println!("Logs are empty");
+        return;
+    }
 
     let min_x = start.unwrap_or(
         all_data.iter().map(|data| data.iter().next().unwrap().0).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()
@@ -115,8 +123,12 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
     root_area.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
 }
 
-fn generate_samples(log_file_name: &String, sampling_freq: i32, start: Option<f64>) -> Vec<i16>  {
-    let data = read_values(log_file_name);
+#[derive(Debug)]
+struct EmptyLogError {
+}
+
+fn generate_samples(log_file_name: &String, sampling_freq: i32, start: Option<f64>) -> Result<Vec<i16>, EmptyLogError>  {
+    let data = read_values(log_file_name).ok_or(EmptyLogError{})?;
     let mut result: Vec<f64> = Vec::new();
     let max_x = data.iter().last().unwrap().0;
     let max_y = *data
@@ -159,11 +171,18 @@ fn generate_samples(log_file_name: &String, sampling_freq: i32, start: Option<f6
         .map(|y| (ratio * y) as i16)
         .for_each(|value| samples.push(value));
     println!("End time: {}", t);
-    samples
+    Ok(samples)
 }
 
 fn generate_wav(log_file_name: &String, wav_file_name: &String, start: Option<f64>) {
     let samples = generate_samples(log_file_name, 192000, start);
+    let samples = match samples {
+        Ok(samples) => samples,
+        Err(_) => {
+            println!("Empty log files");
+            return;
+        }
+    };
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: 192000,
@@ -278,6 +297,13 @@ fn main() {
                 println!("Outputting to file: {}", o);
             }
             let samples = generate_samples(&array.filename, 48000, array.start);
+            let samples = match samples {
+                Ok(samples) => samples,
+                Err(_) => {
+                    println!("Empty log files");
+                    return;
+                }
+            };
             let mut file = File::create(array.output.unwrap_or("output.cpp".to_string())).unwrap();
             file.write_all(b"const int16_t samples[] = {").unwrap();
             if let Some((last, elements)) = samples.split_last() {
@@ -295,6 +321,13 @@ fn main() {
         Command::Play(play) => {
             println!("Playing from file: {:?}", play.filenames);
             let samples = generate_samples(&play.filenames[0], 192000, play.start);
+            let samples = match samples {
+                Ok(samples) => samples,
+                Err(_) => {
+                    println!("Empty log files");
+                    return;
+                }
+            };
             let (_stream, stream_handle) = OutputStream::try_default().unwrap();
             let sink = Sink::try_new(&stream_handle).unwrap();
             let source = rodio::buffer::SamplesBuffer::new(1, 192000, samples);
