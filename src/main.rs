@@ -50,7 +50,13 @@ fn read_values(log_file_name: &String) -> Option<Vec<(f64, f64)>> {
     Some(result)
 }
 
-fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64, start: Option<f64>) {
+fn generate_png(
+    log_file_names: &Vec<String>,
+    png_file_name: &String,
+    zoom_x: f64,
+    zoom_y: f64,
+    start: Option<f64>,
+) {
     let colors = vec![
         RGBColor(200, 0, 0),
         RGBColor(0, 150, 0),
@@ -60,10 +66,16 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
         RGBColor(200, 150, 0),
         RGBColor(50, 50, 50),
     ];
-    let _ = register_font("sans-serif", plotters::style::FontStyle::Normal, 
-    include_bytes!("Montserrat-Regular.ttf"));
-    
-    let mut all_data: VecDeque<Vec<(f64, f64)>> = log_file_names.iter().filter_map(|name| read_values(name)).collect();
+    let _ = register_font(
+        "sans-serif",
+        plotters::style::FontStyle::Normal,
+        include_bytes!("Montserrat-Regular.ttf"),
+    );
+
+    let mut all_data: VecDeque<Vec<(f64, f64)>> = log_file_names
+        .iter()
+        .filter_map(|name| read_values(name))
+        .collect();
 
     if all_data.len() == 0 {
         println!("Logs are empty");
@@ -71,17 +83,44 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
     }
 
     let min_x = start.unwrap_or(
-        all_data.iter().map(|data| data.iter().next().unwrap().0).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()
+        all_data
+            .iter()
+            .map(|data| data.iter().next().unwrap().0)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap(),
     );
-    let max_x = all_data.iter().map(|data| data.iter().last().unwrap().0).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let min_y = all_data.iter().map(|data| *data.iter().map(|(_, y)| y).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()).min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-    let max_y = all_data.iter().map(|data| *data.iter().map(|(_, y)| y).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap()).max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();   
+    let max_x = all_data
+        .iter()
+        .map(|data| data.iter().last().unwrap().0)
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let min_y = all_data
+        .iter()
+        .map(|data| {
+            *data
+                .iter()
+                .map(|(_, y)| y)
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap()
+        })
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let max_y = all_data
+        .iter()
+        .map(|data| {
+            *data
+                .iter()
+                .map(|(_, y)| y)
+                .max_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap()
+        })
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
 
-    let w = (max_x - min_x) * 3000.0 *zoom / (max_y - min_y);
+    let w = (max_x - min_x) * 3000.0 * zoom_x / (max_y - min_y);
     let w = w as u32;
-    let h = (1280.0 * zoom) as u32;
+    let h = (1280.0 * zoom_y) as u32;
 
-  
     let root_area = BitMapBackend::new(png_file_name, (w, h)).into_drawing_area();
 
     root_area.fill(&WHITE).unwrap();
@@ -107,28 +146,32 @@ fn generate_png(log_file_names: &Vec<String>, png_file_name: &String, zoom: f64,
         cc.draw_series(LineSeries::new(data, colors[counter].stroke_width(2)))
             .unwrap()
             .label(log_file_names.get(counter).unwrap())
-            .legend(move|(x,y)| PathElement::new(vec![(x,y), (x + 20,y)], &color));
+            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &color));
         counter += 1;
     }
 
-    let style: TextStyle= ("sans-serif", 20 * zoom as i32).into();
+    let style: TextStyle = ("sans-serif", 20 * zoom_y as i32).into();
     cc.configure_series_labels()
-    .position(SeriesLabelPosition::LowerLeft)
-    .label_font(style)
-    .background_style(&WHITE)
-    .border_style(&BLACK)
-    .draw().unwrap();
+        .position(SeriesLabelPosition::LowerLeft)
+        .label_font(style)
+        .background_style(&WHITE)
+        .border_style(&BLACK)
+        .draw()
+        .unwrap();
 
     // To avoid the IO failure being ignored silently, we manually call the present function
     root_area.present().expect("Unable to write result to file, please make sure 'plotters-doc-data' dir exists under current dir");
 }
 
 #[derive(Debug)]
-struct EmptyLogError {
-}
+struct EmptyLogError {}
 
-fn generate_samples(log_file_name: &String, sampling_freq: i32, start: Option<f64>) -> Result<Vec<i16>, EmptyLogError>  {
-    let data = read_values(log_file_name).ok_or(EmptyLogError{})?;
+fn generate_samples(
+    log_file_name: &String,
+    sampling_freq: i32,
+    start: Option<f64>,
+) -> Result<Vec<i16>, EmptyLogError> {
+    let data = read_values(log_file_name).ok_or(EmptyLogError {})?;
     let mut result: Vec<f64> = Vec::new();
     let max_x = data.iter().last().unwrap().0;
     let max_y = *data
@@ -144,13 +187,13 @@ fn generate_samples(log_file_name: &String, sampling_freq: i32, start: Option<f6
     let mut curr = iter.next().unwrap();
     let mut t = 0.0;
     let p = 1.0 / sampling_freq as f64;
-    if t >= start { 
+    if t >= start {
         result.push(y);
     }
     while t <= max_x {
         t += p;
         if t <= curr.0 {
-            if t >= start { 
+            if t >= start {
                 result.push(y);
             }
             continue;
@@ -233,6 +276,12 @@ struct Plot {
     #[clap(help = "The zoom factor", name = "zoom")]
     #[arg(long)]
     zoom: Option<f64>,
+    #[clap(help = "The X-axis zoom factor", name = "zoom_x")]
+    #[arg(long)]
+    zoom_x: Option<f64>,
+    #[clap(help = "The Y-axis zoom factor", name = "zoom_y")]
+    #[arg(long)]
+    zoom_y: Option<f64>,
     #[clap(long, help = "The output file to use")]
     #[arg(short, long)]
     output: Option<String>,
@@ -273,12 +322,12 @@ fn main() {
             //println!("Plotting from file: {}", plot.filename);
             let filename = &plot.output.unwrap_or("output.png".to_string());
             println!("Outputting to file: {}", filename);
-            generate_png(
-                &plot.filenames,
-                filename,
-                plot.zoom.unwrap_or(1.0),
-                plot.start,
-            );
+            // Use zoom_x and zoom_y if provided, otherwise fall back to zoom, otherwise default to 1.0
+            let default_zoom = plot.zoom.unwrap_or(1.0);
+            let x_zoom = plot.zoom_x.unwrap_or(default_zoom);
+            let y_zoom = plot.zoom_y.unwrap_or(default_zoom);
+
+            generate_png(&plot.filenames, filename, x_zoom, y_zoom, plot.start);
         }
         Command::Wav(wav) => {
             println!("Generating wav from file: {}", wav.filename);
@@ -315,9 +364,9 @@ fn main() {
                 }
                 file.write_all(format!("{}", last).as_bytes()).unwrap();
             }
-                
+
             file.write_all(b"};").unwrap();
-        },
+        }
         Command::Play(play) => {
             println!("Playing from file: {:?}", play.filenames);
             let samples = generate_samples(&play.filenames[0], 192000, play.start);
