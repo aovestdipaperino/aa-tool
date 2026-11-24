@@ -1,5 +1,7 @@
 # el-tool
 
+[![GitHub stars](https://img.shields.io/github/stars/aovestdipaperino/aa-tool?logo=github&color=brightgreen)](https://github.com/aovestdipaperino/aa-tool/stargazers)
+
 el-tool is a command line tool written in Rust to help converting/playing netlist nltool output logs.
 It allows to:
 - plot multiple log files into a PNG chart
